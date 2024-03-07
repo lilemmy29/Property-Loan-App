@@ -1,0 +1,106 @@
+import streamlit as st
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.ensemble import RandomForestClassifier
+from joblib import dump, load
+
+# Load the dataset
+df = pd.read_csv(r"C:\Users\user\Desktop\Property Loan App Project\loan_data.csv")
+df.columns = df.columns.str.lower()
+df.columns = df.columns.str.strip()
+df['loan_status'] = df['loan_status'].replace({'Y': 1, 'N': 0})
+
+# Split the data
+x = df.drop(['loan_id', 'loan_status'], axis=1)
+y = df['loan_status']
+x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=40, test_size=0.3)
+
+# Define preprocessing steps
+num_columns = x.select_dtypes(include=['int', 'float'])
+cat_columns = x.select_dtypes(include=['O'])
+
+num_pipe = Pipeline([
+    ('impute', SimpleImputer(strategy='mean')),
+    ('scaler', StandardScaler())
+])
+
+cat_pipe = Pipeline([
+    ('impute', SimpleImputer(strategy='constant', fill_value='missing')),
+    ('encode', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', num_pipe, num_columns.columns),
+        ('cat', cat_pipe, cat_columns.columns)
+    ],
+    remainder='passthrough',
+    n_jobs=-1
+)
+
+# Train the model
+rf = RandomForestClassifier()
+rf_model = Pipeline([('preprocessor', preprocessor), ('rf', rf)])
+rf_model.fit(x_train, y_train)
+
+# Save the trained model
+model_path = "rf_model.joblib"
+dump(rf_model, model_path)
+
+# Streamlit web app
+st.title("Property Loan App")
+
+# Sidebar for user input
+st.sidebar.header("User Input")
+
+# Create input widgets for the user to enter data
+loan_id = st.sidebar.text_input("Enter Name")
+gender = st.sidebar.selectbox("Select Gender", df['gender'].unique())
+married = st.sidebar.selectbox("Marital Status", df['married'].unique())
+dependents = st.sidebar.selectbox("Number of Dependents", df['dependents'].unique())
+education = st.sidebar.selectbox("Education Level", df['education'].unique())
+self_employed = st.sidebar.selectbox("Self Employed", df['self_employed'].unique())
+applicant_income = st.sidebar.number_input("Applicant Income")
+coapplicant_income = st.sidebar.number_input("Coapplicant Income")
+loan_amount = st.sidebar.number_input("Loan Amount")
+loan_amount_term = st.sidebar.number_input("Loan Amount Term (Days)",min_value=1, format="%d")
+credit_history = st.sidebar.selectbox("Credit History", df['credit_history'].unique())
+property_area = st.sidebar.selectbox("Property Area", df['property_area'].unique())
+
+# Create a DataFrame with user input
+user_data = pd.DataFrame({
+    'loan_id': [loan_id],
+    'gender': [gender],
+    'married': [married],
+    'dependents': [dependents],
+    'education': [education],
+    'self_employed': [self_employed],
+    'applicantincome': [applicant_income],
+    'coapplicantincome': [coapplicant_income],
+    'loanamount': [loan_amount],
+    'loan_amount_term': [loan_amount_term],
+    'credit_history': [credit_history],
+    'property_area': [property_area]
+})
+
+# Add a prediction button
+if st.sidebar.button("Predict"):
+    # Make prediction
+    prediction = rf_model.predict(user_data)
+
+    # Display prediction
+    st.subheader("Application Result:")
+    if prediction[0] == 1:
+        st.success("Congratulations! Your loan is approved.")
+    else:
+        st.error("Sorry, your loan application is rejected.")
+
+# Display the model details
+st.sidebar.subheader("Model Details")
+st.sidebar.markdown(f"Trained Model: {model_path}")
+
